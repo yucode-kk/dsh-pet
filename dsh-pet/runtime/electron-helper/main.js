@@ -23,6 +23,11 @@ try {
   process.exit(3);
 }
 const { app, BrowserWindow, ipcMain, screen, shell, protocol, Tray, Menu, nativeImage, powerMonitor } = electronApi;
+// 调试口：显式给 DSH_PET_HELPER_DEBUG_PORT 才开远程调试端口，平时不占端口。
+// 排查渲染端问题（DOM、吃白饭这类纯前端玩法）时用它连 CDP，比猜坐标点菜单可靠。
+if (process.env.DSH_PET_HELPER_DEBUG_PORT) {
+  app.commandLine.appendSwitch('remote-debugging-port', String(process.env.DSH_PET_HELPER_DEBUG_PORT));
+}
 const path = require('node:path');
 const fsPromises = require('node:fs/promises');
 // 点击穿透兜底通道的纯判定（不依赖 Electron 的 forward 鼠标钩子；见文件头）

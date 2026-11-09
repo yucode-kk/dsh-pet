@@ -76,6 +76,7 @@
   "scripts": {
     "bundle": "tsdown",
     "build:desktop-core": "node scripts/build-desktop-core.mjs",
+    "build:desktop-baifan": "node scripts/build-desktop-baifan.mjs",
     "watch": "tsdown --watch",
     "ensure:electron": "node scripts/ensure-electron.mjs",
     "start:desktop": "node scripts/start-desktop.mjs",

@@ -49,6 +49,12 @@ Object.assign(PetSprite.prototype, {
       if (this.sleeping) tools.push({ label: '起来', action: 'wake', hint: S.SLEEP_HOTKEY_HINT });
       else tools.push({ label: '睡觉', action: 'sleep', hint: S.SLEEP_HOTKEY_HINT });
     }
+    // 吃白饭：只在配置里配了 animations.baifan 时出现（与网页端注册菜单项的条件一致）。
+    // 桌面 Helper 版不注册宿主菜单、也不发接口，点下去直接在窗口里开演（见 baifan.js）。
+    if (Array.isArray(this.animations.baifan) && this.animations.baifan.length >= 5) {
+      const showing = !!(window.PetBaifan && window.PetBaifan.isRunning());
+      tools.push({ label: showing ? '吃白饭收场' : '吃白饭', action: 'baifan' });
+    }
     // 动作树之后是维护类：显示位置 → 重载配置 → 回到初始位置。
     const tail = [
       // 显示位置（仅网页/仅桌面/两者/都不）：改这只宠物的 display 配置，由宿主重载生效。
@@ -133,6 +139,10 @@ Object.assign(PetSprite.prototype, {
     }
     if (leaf.action === 'todo') {
       this.toggleTodo(); // 打开待办面板（右键菜单入口）
+      return;
+    }
+    if (leaf.action === 'baifan') {
+      if (window.PetBaifan) window.PetBaifan.toggle(this); // 开演 / 收场（桌面版，见 baifan.js）
       return;
     }
     if (leaf.action === 'home') {

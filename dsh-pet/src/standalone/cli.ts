@@ -143,7 +143,8 @@ async function run(logger: StandaloneLogger, options: { port: number }): Promise
     ai.getSettings().balanceProvider
       ? `  余额        已选 ${ai.getSettings().balanceProvider}，设置页点「查询余额」取数`
       : '  余额        未选服务商；设置页「AI 服务商」→「余额查询服务商」里选一家',
-    '  不可用      会话工作状态 / DSH 系统通知',
+    '  工作状态    DSH 会话联动不可用；外部程序可 POST /dsh-pet-7340/work-status 驱动动画与气泡',
+    '  不可用      DSH 系统通知（需要 DSH 宿主）',
     '  退出        Ctrl+C、POST /shutdown，或桌面托盘菜单的「退出」',
     '',
   ]) {

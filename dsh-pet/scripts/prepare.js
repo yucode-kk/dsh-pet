@@ -35,6 +35,15 @@ if (buildCore.status !== 0) {
   process.exit(1);
 }
 
+// 「吃白饭」桌面版：同一份演出/米饭层源码，产 runtime/electron-helper/baifan.js（window.PetBaifan）。
+console.log('[prepare] building desktop baifan...');
+const baifanRun = process.platform === 'win32' ? 'cmd /c npm run build:desktop-baifan' : 'npm run build:desktop-baifan';
+const buildBaifan = spawnSync(baifanRun, { cwd: ROOT, stdio: 'inherit', shell: true });
+if (buildBaifan.status !== 0) {
+  console.error(`[prepare] 桌面吃白饭构建失败 (exit ${buildBaifan.status})`);
+  process.exit(1);
+}
+
 // 类型声明是构建产物、不入 git，克隆后靠这一步补齐；漏跑则 exports 声明的 types 路径全空。
 console.log('[prepare] generating types (npm run types)...');
 const typesRun = process.platform === 'win32' ? 'cmd /c npm run types' : 'npm run types';

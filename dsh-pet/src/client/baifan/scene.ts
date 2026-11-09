@@ -41,9 +41,10 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K): HTMLElementTagNameMa
  *
  * @param layer - 覆盖层根节点（本层所有元素都挂它下面）。
  * @param toastEl - 提示条节点；`toast()` 直接写它。
+ * @param pics - 米饭与空碗的图片地址；默认用页面同源路径，桌面 Helper 传 BASE 前缀的绝对地址。
  * @returns 生成、落体、飞行、计分与清理的方法。
  */
-export function createScene(layer: HTMLDivElement, toastEl: HTMLDivElement) {
+export function createScene(layer: HTMLDivElement, toastEl: HTMLDivElement, pics: typeof PIC = PIC) {
   /** 场上的饭。 */
   let items: RiceItem[] = [];
   /** 落体循环的 rAF 句柄；0 = 没在跑。 */
@@ -84,7 +85,7 @@ export function createScene(layer: HTMLDivElement, toastEl: HTMLDivElement) {
     const w = (isBowl ? 124 : 110) * scale;
     const img = el('img');
     img.className = 'bf-rice';
-    img.src = isBowl ? PIC.bowlFull : PIC.riceBall;
+    img.src = isBowl ? pics.bowlFull : pics.riceBall;
     img.alt = '';
     img.draggable = false;
     img.style.width = w + 'px';
@@ -218,7 +219,7 @@ export function createScene(layer: HTMLDivElement, toastEl: HTMLDivElement) {
     const w = 124 * scale;
     const img = el('img');
     img.className = 'bf-rice';
-    img.src = PIC.bowlEmpty;
+    img.src = pics.bowlEmpty;
     img.alt = '';
     img.draggable = false;
     img.style.width = w + 'px';
@@ -262,7 +263,7 @@ export function createScene(layer: HTMLDivElement, toastEl: HTMLDivElement) {
       '<img class="' +
       (isBowl ? 'bowl' : 'ball') +
       '" src="' +
-      (isBowl ? PIC.bowlFull : PIC.riceBall) +
+      (isBowl ? pics.bowlFull : pics.riceBall) +
       '" alt="">' +
       '<span class="num">' +
       value +

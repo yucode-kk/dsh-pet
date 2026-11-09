@@ -86,6 +86,7 @@ const required = [
   'runtime/electron-helper/sprite/init.js', // 桌面模式构建期初始化（同上）
   'runtime/electron-helper/sprite/window-fit.js', // 桌面模式窗口落位与钳制补偿（sprite.js 的原型扩展，须在其后加载）
   'runtime/electron-helper/shared-core.js', // 桌面模式共享纯逻辑（src/shared 构建产物，window.PetShared）
+  'runtime/electron-helper/baifan.js', // 桌面模式「吃白饭」（src/client/baifan/desktop.ts 构建产物，window.PetBaifan）
   'runtime/electron-helper/index.html', // 桌面模式页面壳
 ];
 for (const f of required) {
