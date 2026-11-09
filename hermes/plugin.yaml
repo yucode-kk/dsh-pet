@@ -1,0 +1,36 @@
+name: dsh-pet-hermes
+label: dsh-pet 桌宠
+kind: standalone
+version: 0.1.1
+manifest_version: 2
+api_version: 1
+license: MIT
+author: yucode-kk
+homepage: https://github.com/yucode-kk/dsh-pet
+description: >
+  把 dsh-pet 桌宠接到 Hermes：启用后以独立模式拉起一只桌宠窗口。插件目录里自带一份 dsh-pet
+  运行时（安装时从仓库复制 lib/、桌面 helper 与素材，不重写桌宠核心），装完不依赖仓库路径，
+  卸载时整目录一起走。Hermes 的回合与工具活动映射到桌宠的工作状态。
+  数据根、配置、对话记忆全部落在 Hermes 插件数据目录，和 DSH 那边互不可见；唯一例外是
+  Electron 的 userData（dsh-pet 里写死成共用 `%APPDATA%\dsh-pet-electron-helper`）。
+  附带 `hermes dsh-pet-hermes status|start|stop|uninstall` 管理命令，用来随时
+  停掉或彻底移除。
+requires_hermes: ">=0.22.0"
+
+# 运行时是插件自带的那份 dsh-pet（Node 进程），Hermes 的 Python 环境不装、也不碰。
+python_runtime: external
+
+# 只做宿主适配，不新增模型可调用工具。
+provides_tools: []
+
+# 最小映射：会话开始 → thinking，工具结束 → working，回合结束 → 清回空闲。
+provides_hooks:
+  - on_session_start
+  - post_tool_call
+  - on_session_end
+
+config_schema:
+  autostart: {type: bool, default: true, description: 网关启动时自动拉起桌宠}
+  node_path: {type: str, default: "", description: node 可执行文件路径（留空用 PATH 里的 node）}
+  port: {type: int, default: 3080, description: 桌宠本机服务起始端口（被占用会自动顺延）}
+  dsh_pet_path: {type: str, default: "", description: dsh-pet 包路径（留空用插件目录里自带的 dsh-pet/）}

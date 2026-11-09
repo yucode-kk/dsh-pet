@@ -1,0 +1,3 @@
+# 适配层测试依赖（只用于 tests/hermes_plugin，不参与插件运行时）
+pytest>=8
+coverage>=7

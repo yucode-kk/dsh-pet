@@ -40,6 +40,13 @@ AI 生成动画的配方     源视频 → 透明动画的管线    运行在 DS
 
 前置要求、源码安装、独立模式的用法与打包、Electron 首次下载、装完会看到什么，见 **[INSTALL.md](INSTALL.md)**。
 
+## 在 Hermes Agent 里用
+
+同一套桌宠也能装进 [Hermes Agent](https://hermes-agent.nousresearch.com/)：`hermes/` 是原生插件入口，
+拉起的仍是本仓库现成的独立模式进程，动画与素材不再重写一份；数据根、配置、记忆与 DSH 那边分开，
+两只能同时跑，并自带一条命令卸载。装法、管理命令和已知限制见
+**[docs/hermes-plugin.md](docs/hermes-plugin.md)**。
+
 ## 插件功能
 
 只做桌宠本身，不碰 DSH 内核；能力就下面这些。
