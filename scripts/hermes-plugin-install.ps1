@@ -3,7 +3,7 @@
 把 dsh-pet Hermes 插件装进 Hermes 的插件目录并启用：适配层 + 自带运行时。
 
 .DESCRIPTION
-复制到 <HERMES_HOME>\plugins\dsh-pet-hermes\ 的内容：
+复制到 <HERMES_HOME>\plugins\dsh-pet\ 的内容：
   - hermes/ 适配层（约 20 KB）
   - dsh-pet/ 的可分发部分（lib、runtime/electron-helper、素材、package.json，约 75 MB）
 装完的插件是自包含的：运行时就在插件目录里，不再指向仓库路径；卸载时整目录一起带走。
@@ -24,7 +24,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$pluginId = 'dsh-pet-hermes'
+$pluginId = 'dsh-pet'
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $source = Join-Path $repoRoot 'hermes'

@@ -60,7 +60,7 @@ def package_tree(tmp_path: Path) -> Path:
 @pytest.fixture
 def sidecar_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, package_tree: Path, fake_ctx: FakeCtx):
     """把插件数据目录和 dsh-pet 包位置都指到 tmp，构造一个可用的 Sidecar。"""
-    data = tmp_path / "plugin-data" / "dsh-pet-hermes"
+    data = tmp_path / "plugin-data" / "dsh-pet"
     monkeypatch.setattr(sidecar_mod, "_plugin_data_dir", lambda: data)
     monkeypatch.setenv("DSH_PET_HOME", str(package_tree))
     monkeypatch.delenv("HERMES_HOME", raising=False)

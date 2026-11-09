@@ -1,20 +1,22 @@
-name: dsh-pet-hermes
+name: dsh-pet
 label: dsh-pet 桌宠
 kind: standalone
-version: 0.1.1
+version: 0.2.0
 manifest_version: 2
 api_version: 1
 license: MIT
 author: yucode-kk
 homepage: https://github.com/yucode-kk/dsh-pet
 description: >
-  把 dsh-pet 桌宠接到 Hermes：启用后以独立模式拉起一只桌宠窗口。插件目录里自带一份 dsh-pet
-  运行时（安装时从仓库复制 lib/、桌面 helper 与素材，不重写桌宠核心），装完不依赖仓库路径，
-  卸载时整目录一起走。Hermes 的回合与工具活动映射到桌宠的工作状态。
-  数据根、配置、对话记忆全部落在 Hermes 插件数据目录，和 DSH 那边互不可见；唯一例外是
-  Electron 的 userData（dsh-pet 里写死成共用 `%APPDATA%\dsh-pet-electron-helper`）。
-  附带 `hermes dsh-pet-hermes status|start|stop|uninstall` 管理命令，用来随时
-  停掉或彻底移除。
+  把 dsh-pet 桌宠接到 Hermes：启用后以独立模式拉起一只桌宠窗口。用仓库根安装脚本装时，
+  插件目录里自带一份 dsh-pet 运行时（复制 lib/、桌面 helper 与素材，不重写桌宠核心），
+  装完不依赖仓库路径，卸载时整目录一起走；从插件市场安装（只 clone 插件子目录）时，
+  首次启动会按固定版本 `dsh-pet@0.4.7` 从 npm 装一份运行时到插件数据目录
+  （一次性下载约 80 MB，需要联网；固定版本不是自更新，升级随新 PR）。Hermes 的回合与工具
+  活动映射到桌宠的工作状态。数据根、配置、对话记忆全部落在 Hermes 插件数据目录，和 DSH
+  那边互不可见；唯一例外是 Electron 的 userData（dsh-pet 里写死成共用
+  `%APPDATA%\dsh-pet-electron-helper`）。附带 `hermes dsh-pet status|start|stop|uninstall`
+  管理命令，用来随时停掉或彻底移除。
 requires_hermes: ">=0.22.0"
 
 # 运行时是插件自带的那份 dsh-pet（Node 进程），Hermes 的 Python 环境不装、也不碰。

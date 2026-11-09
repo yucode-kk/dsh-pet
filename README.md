@@ -44,8 +44,9 @@ AI 生成动画的配方     源视频 → 透明动画的管线    运行在 DS
 
 同一套桌宠也能装进 [Hermes Agent](https://hermes-agent.nousresearch.com/)：`hermes/` 是原生插件入口，
 拉起的仍是本仓库现成的独立模式进程，动画与素材不再重写一份；数据根、配置、记忆与 DSH 那边分开，
-两只能同时跑，并自带一条命令卸载。装法、管理命令和已知限制见
-**[docs/hermes-plugin.md](docs/hermes-plugin.md)**。
+两只能同时跑，并自带一条命令卸载。从插件市场安装时，插件目录里只有适配层，第一次启动会按固定版本
+`dsh-pet@0.4.7` 从 npm 补一份运行时（约 80 MB，需要联网）；想要装完即自包含、离线可用的，用仓库根的
+安装脚本。装法、管理命令和已知限制见 **[docs/hermes-plugin.md](docs/hermes-plugin.md)**。
 
 ## 插件功能
 

@@ -1,4 +1,4 @@
-"""``hermes dsh-pet-hermes ...`` 管理命令：查状态、启停，以及一条命令把自己卸掉。
+"""``hermes dsh-pet ...`` 管理命令：查状态、启停，以及一条命令把自己卸掉。
 
 卸载走官方 CLI（disable + remove），不手改 config.yaml、不手删注册记录；本文件只负责
 先把桌宠进程收好，再让 Hermes 自己把插件摘掉。数据目录默认保留，``--purge`` 才删。
@@ -14,11 +14,11 @@ import time
 from argparse import ArgumentParser, Namespace
 from typing import Any
 
-PLUGIN_ID = "dsh-pet-hermes"
+PLUGIN_ID = "dsh-pet"
 
 
 def attach(ctx: Any, sidecar: Any) -> None:
-    """注册 ``hermes dsh-pet-hermes <action>``。"""
+    """注册 ``hermes dsh-pet <action>``。"""
     ctx.register_cli_command(
         name=PLUGIN_ID,
         help="管理 dsh-pet 桌宠：status / start / stop / uninstall",

@@ -4,7 +4,7 @@
 
 `hermes/` 是同一套桌宠的 **Hermes 原生插件**入口：Hermes 负责发现、启用和生命周期。装的时候会把
 `dsh-pet/` 的可分发部分（`lib/`、`runtime/electron-helper/`、素材）一起复制进插件目录，所以**装完的插件
-是自包含的**——运行时就在 `<HERMES_HOME>\plugins\dsh-pet-hermes\dsh-pet\` 里，不再指向仓库路径，
+是自包含的**——运行时就在 `<HERMES_HOME>\plugins\dsh-pet\dsh-pet\` 里，不再指向仓库路径，
 卸载时整个目录一起走。动画、对话、余额、设置页、素材一份都不重写。
 两边各跑自己的进程，数据根、配置、对话记忆、待办与日志互不可见；唯一共用的是 Electron 的 userData
 目录（`%APPDATA%\dsh-pet-electron-helper`，dsh-pet 自己在 `runtime/electron-helper/main.js` 里硬编码的，
@@ -19,7 +19,7 @@ Hermes 网关 ──加载──> hermes/plugin.yaml + __init__.py
                         │     → POST /dsh-pet-7340/work-status（external 槽，档位：thinking/working/…）
                         │
                         └─ 非阻塞拉起 ──> node <插件目录>/dsh-pet/lib/standalone.js
-                                            DSH_HOME = <HERMES_HOME>/plugin-data/dsh-pet-hermes/runtime-home
+                                            DSH_HOME = <HERMES_HOME>/plugin-data/dsh-pet/runtime-home
 ```
 
 - 不新增模型可调用工具：桌宠的交互仍然是它自己的窗口、菜单和设置页。
@@ -44,7 +44,7 @@ Hermes 网关 ──加载──> hermes/plugin.yaml + __init__.py
 - 素材：`assets/webm` 里的 5 段动画 + `assets/pic/baifan/{bowl-full,bowl-empty,rice-ball}.png`，安装脚本都会复制。
 
 排查这类纯前端玩法时给一个调试口：给 Helper 进程设 `DSH_PET_HELPER_DEBUG_PORT=9333`（例如
-`DSH_PET_HELPER_DEBUG_PORT=9333 hermes dsh-pet-hermes start`），就能用 CDP 连
+`DSH_PET_HELPER_DEBUG_PORT=9333 hermes dsh-pet start`），就能用 CDP 连
 `http://127.0.0.1:9333/json/list` 读 DOM、点菜单、抓窗口截图；不设变量时不开端口。
 
 ## 装
@@ -71,19 +71,37 @@ memes,pic,sound,config.jsonc,logo.png,main-character.png}`（跳掉 `assets/prev
 离线机器装不了），`dsh-pet/` 里跑过 `npm install && npm run build`（`lib/` 构建产物必须在，安装脚本会检查）。
 Electron 不必预先下载：本机 `%USERPROFILE%\.dsh\electron` 有现成的话直接复用，没有才下。
 
+### 从插件市场装（catalog）
+
+市场条目装的是 `repo#hermes` 子目录：clone + checkout，只复制 `hermes/` 适配层，**不跑仓库根的 ps1**，
+插件目录里没有自带运行时。这条路第一次启动会自己补：
+
+```
+<HERMES_HOME>/plugin-data/dsh-pet/runtime/node_modules/dsh-pet/   # npm install --prefix 到这里
+```
+
+- 固定版本 `dsh-pet@0.4.7`（`hermes_adapter/sidecar.py` 里的 `RUNTIME_VERSION`），不是自更新：
+  升级要提 PR 把版本和条目 sha 一起 bump，reviewer 才看得见。
+- 一次性下载约 80 MB，需要联网和 PATH 里的 `npm`；慢网络下可能几十秒到几分钟没反应，
+  日志里会有一行「运行时缺失，按固定版本装到 …」。
+- 找不到 `npm` 时不会静默失败，`start` 会报「没有找到 dsh-pet 运行时，也找不到 npm」；
+  想把插件目录变成自包含的，就用仓库根那份安装脚本（上一条）。
+- 市场装出来的运行时是上游 npm 包（`dsh-pet@0.4.7`），桌面版「吃白饭」等本仓库的新特性
+  以那份包的版本为准；要跟着仓库走就用自包含安装。
+
 ## 日常操作
 
 ```powershell
-hermes dsh-pet-hermes status      # 运行状态、pid、端口、设置页地址、数据目录
-hermes dsh-pet-hermes start       # 手动拉起（CLI 退出不会把它带走）
-hermes dsh-pet-hermes stop        # 只停进程，插件还装着
-hermes dsh-pet-hermes uninstall -y [--purge]   # 停进程 + 禁用 + 移除插件
+hermes dsh-pet status      # 运行状态、pid、端口、设置页地址、数据目录
+hermes dsh-pet start       # 手动拉起（CLI 退出不会把它带走）
+hermes dsh-pet stop        # 只停进程，插件还装着
+hermes dsh-pet uninstall -y [--purge]   # 停进程 + 禁用 + 移除插件
 ```
 
 `status` / `start` 还会把端口段里**别的** dsh-pet 实例列出来（DSH 自己那只、或上次没退干净留下的孤儿）。
 屏幕上多一只窗口、动画不跟着动，先看这里——十有八九是盯着另一只实例在看。
 
-设置项（`plugins.entries.dsh-pet-hermes.settings`，桌面端「插件」页也能改）：
+设置项（`plugins.entries.dsh-pet.settings`，桌面端「插件」页也能改）：
 
 | 键 | 默认 | 说明 |
 | --- | --- | --- |
@@ -95,10 +113,11 @@ hermes dsh-pet-hermes uninstall -y [--purge]   # 停进程 + 禁用 + 移除插�
 ## 数据落在哪
 
 ```
-<HERMES_HOME>/plugin-data/dsh-pet-hermes/
+<HERMES_HOME>/plugin-data/dsh-pet/
   runtime-home/
     dsh-pet/            # main-config.jsonc、pet/*.json、logs.txt、standalone-runtime.json
     electron/           # Electron 运行时（首次启动下载，约 350 MB）
+  runtime/              # 仅市场安装路径会用到：npm install --prefix 出来的固定版本运行时
 ```
 
 和 DSH 的 `~/.dsh` 分开：配置、AI 密钥、对话记忆、待办、日志各走各的，也没有软链接互相指向。
@@ -112,20 +131,20 @@ hermes dsh-pet-hermes uninstall -y [--purge]   # 停进程 + 禁用 + 移除插�
 
 ```powershell
 # ① 插件还加载得起来时（推荐）
-hermes dsh-pet-hermes uninstall -y            # 数据保留；想连数据一起清加 --purge
+hermes dsh-pet uninstall -y            # 数据保留；想连数据一起清加 --purge
 
 # ② 插件坏了/加载不起来时的兜底
 powershell -ExecutionPolicy Bypass -File scripts\hermes-plugin-uninstall.ps1 [-Yes] [-Purge]
 
 # ③ 手动三步
-hermes plugins disable dsh-pet-hermes
-hermes plugins remove  dsh-pet-hermes        # 交互确认输入 y
-# 可选：删掉 <HERMES_HOME>\plugin-data\dsh-pet-hermes
+hermes plugins disable dsh-pet
+hermes plugins remove  dsh-pet        # 交互确认输入 y
+# 可选：删掉 <HERMES_HOME>\plugin-data\dsh-pet
 ```
 
 入口 ①② 会先按 `standalone-runtime.json` 里的 pid/令牌发退出请求，动手前先用 `/health` 核对 pid
 （对不上就跳过，绝不按端口猜、也不会误停别人的进程）。入口 ③ 是纯手动路径，本身不停进程——
-先 `hermes dsh-pet-hermes stop` 或直接关窗口。仓库源码（`hermes/`、`dsh-pet/`）任何入口都不会碰。
+先 `hermes dsh-pet stop` 或直接关窗口。仓库源码（`hermes/`、`dsh-pet/`）任何入口都不会碰。
 
 卸载跑完会复查一遍：进程退没退、端口放没放开。没退就按父子关系强制结束（Windows 用 `taskkill /T`），
 省得留下「窗口还在、状态文件没了」的幽灵实例——那种窗口永远不会有动画。
@@ -153,7 +172,7 @@ Windows / POSIX 两条分支（`monkeypatch` 自动还原）。
   目录，下完才出窗口——`status` 里能看到端口已经起来，说明服务先就绪、窗口后到。
 - 插件是复制安装，自带的那份 `dsh-pet/` 是**快照**：改完 `dsh-pet/` 或 `hermes/` 的代码都要重跑一次安装
   脚本（`-Force`）才生效；`dsh-pet/` 尚未独立成 Git 仓库，所以暂时不能用 `hermes plugins update`。
-- 卸载走 `hermes dsh-pet-hermes uninstall -y`：会先停进程，再让 `hermes plugins remove` 把插件目录
+- 卸载走 `hermes dsh-pet uninstall -y`：会先停进程，再让 `hermes plugins remove` 把插件目录
   （含自带运行时）整个删掉，`--purge` 连数据目录一起清。
 - Hermes 侧只映射工作状态；DSH 的系统通知、趋势等依赖 DSH 宿主的能力在独立模式下不可用（桌宠自己会在
   设置页标注）。

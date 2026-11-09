@@ -28,7 +28,7 @@ from . import api
 
 _log = logging.getLogger("dsh_pet_hermes")
 
-PLUGIN_ID = "dsh-pet-hermes"
+PLUGIN_ID = "dsh-pet"
 DEFAULT_PORT = 3080
 #: 探测邻居实例的端口跨度（含起始端口本身）；独立模式被占用时逐端口顺延。
 PROBE_SPAN = 10
@@ -37,6 +37,13 @@ PROBE_SPAN = 10
 START_TIMEOUT = 45.0
 #: 收尾等待进程退出的时长（正常是 POST /quit 后的优雅退出）。
 STOP_TIMEOUT = 15.0
+
+#: 市场安装只 clone 仓库、不跑安装脚本，插件目录里没有自带运行时；首次启动按这个固定版本补一份。
+#: 版本写死（不是自更新）：升级要新 PR，reviewer 才看得见 sha 与版本一起 bump。
+RUNTIME_PACKAGE = "dsh-pet"
+RUNTIME_VERSION = "0.4.7"
+#: npm install 的等待上限：80 MB 左右，慢网络下也够用。
+RUNTIME_NPM_TIMEOUT = 600.0
 
 
 class SidecarError(RuntimeError):
@@ -145,9 +152,12 @@ class Sidecar:
         self._cleanup_on_exit = False
 
         self.root = Path(__file__).resolve().parents[1]  # = 插件根（hermes/）
+        self.data_dir = _plugin_data_dir()
+        #: 市场安装（只 clone 插件子目录）时用的运行时落地处：npm install --prefix 到这里。
+        self.runtime_dir = self.data_dir / "runtime"
         self.package_dir = self._resolve_package_dir()
         self.script = self.package_dir / "lib" / "standalone.js"
-        self.home = _plugin_data_dir() / "runtime-home"
+        self.home = self.data_dir / "runtime-home"
         self.state_dir = self.home / "dsh-pet"
         self.state_file = self.state_dir / "standalone-runtime.json"
         self.log_file = self.state_dir / "hermes-launch.log"
@@ -157,8 +167,8 @@ class Sidecar:
         """找到 dsh-pet 包根（含 lib/standalone.js）。
 
         本层不携带桌宠代码，只指路，按优先级：
-        环境变量 DSH_PET_HOME / 设置 dsh_pet_path / 安装时写入的 package-path.json /
-        仓库同级目录 / 插件目录下 node_modules。
+        环境变量 DSH_PET_HOME / 设置 dsh_pet_path / 插件自带的 dsh-pet/ /
+        首启自举的 npm 运行时 / 安装时写入的 package-path.json / 仓库同级目录 / 插件目录下 node_modules。
         """
         env = os.environ.get("DSH_PET_HOME", "").strip()
         configured = str(self._setting("dsh_pet_path", "") or "").strip()
@@ -171,6 +181,8 @@ class Sidecar:
         # 装完的插件不依赖仓库还在不在原路径（复制安装、可整体卸载）。
         vendored = self.root / "dsh-pet"
         candidates.append(vendored)
+        # 市场安装不跑安装脚本，插件目录里没有 dsh-pet/；首次启动由 ensure_runtime() 装到这里。
+        candidates.append(self.runtime_dir / "node_modules" / RUNTIME_PACKAGE)
         # 安装脚本把仓库里 dsh-pet 的真实位置写在这里：插件被复制到
         # <HERMES_HOME>/plugins 之后，自己已经不在仓库里了，靠相对路径找不到。
         pointer = self.root / "package-path.json"
@@ -224,6 +236,70 @@ class Sidecar:
             if Path(candidate).exists():
                 return candidate
         return None
+
+    def npm_path(self) -> Optional[str]:
+        """PATH 里的 npm（Windows 上是 npm.cmd）。"""
+        for name in ("npm", "npm.cmd"):
+            found = shutil.which(name)
+            if found:
+                return found
+        return None
+
+    def ensure_runtime(self) -> Path:
+        """确保有可用的 dsh-pet 包根；市场安装没有自带运行时，首次启动补一份固定版本。
+
+        安装走 ``npm install --prefix <插件数据>/runtime dsh-pet@<固定版本>``：只做一次，
+        失败就把 npm 的原话抛给用户，不吞成“找不到入口”。这不是自更新——版本由仓库里的
+        常量写死，升级要提 PR 改版本（catalog 的信任模型是固定 SHA + 固定版本）。
+        """
+        if self.script.exists():
+            return self.package_dir
+        npm = self.npm_path()
+        if not npm:
+            raise SidecarError(
+                "没有找到 dsh-pet 运行时，也找不到 npm；先跑一次 scripts/hermes-plugin-install.ps1"
+                "（自带运行时），或把 npm 放进 PATH 后重试。"
+            )
+        self.runtime_dir.mkdir(parents=True, exist_ok=True)
+        _log.info(
+            "dsh-pet 运行时缺失，按固定版本 %s@%s 装到 %s（首次启动需要联网，约 80 MB）",
+            RUNTIME_PACKAGE,
+            RUNTIME_VERSION,
+            self.runtime_dir,
+        )
+        cmd = [
+            npm,
+            "install",
+            "--omit=dev",
+            "--ignore-scripts",
+            "--no-audit",
+            "--no-fund",
+            "--prefix",
+            str(self.runtime_dir),
+            f"{RUNTIME_PACKAGE}@{RUNTIME_VERSION}",
+        ]
+        try:
+            done = subprocess.run(  # noqa: S603 - 固定 argv，无 shell
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=RUNTIME_NPM_TIMEOUT,
+                encoding="utf-8",
+                errors="replace",
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise SidecarError(f"安装 dsh-pet 运行时失败：{exc}") from exc
+        if done.returncode != 0:
+            tail = ((done.stderr or "") or (done.stdout or "")).strip()[-400:]
+            raise SidecarError(f"安装 dsh-pet 运行时失败（npm 退出码 {done.returncode}）：{tail}")
+        self.package_dir = self._resolve_package_dir()
+        self.script = self.package_dir / "lib" / "standalone.js"
+        if not self.script.exists():
+            raise SidecarError(
+                f"npm 装完仍然找不到 {self.script}；把插件数据目录 {self.runtime_dir} 删掉后重试，"
+                "或在插件设置 dsh_pet_path 里指定一份 dsh-pet 包目录。"
+            )
+        return self.package_dir
 
     # ── 运行时状态 ─────────────────────────────────────────────────────
     def read_runtime(self) -> Optional[Runtime]:
@@ -345,12 +421,8 @@ class Sidecar:
                     ", ".join(str(item["port"]) for item in others),
                     ", ".join(str(item["pid"]) for item in others),
                 )
-            if not self.script.exists():
-                raise SidecarError(
-                    f"找不到独立模式入口 {self.script}；先跑一次 npm install && npm run build，"
-                    "或重新执行 scripts/hermes-plugin-install.ps1（会写入 package-path.json 指路），"
-                    "也可以在插件设置 dsh_pet_path 里填 dsh-pet 包目录。"
-                )
+            # 自带运行时 / npm 自举 / 设置里的路径都没命中时，这里会抛出可读的错误。
+            self.ensure_runtime()
             node = self.node_path()
             if not node:
                 raise SidecarError("找不到 node 可执行文件；请在插件设置里填 node_path，或把 node 放进 PATH。")

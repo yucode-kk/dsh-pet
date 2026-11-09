@@ -5,8 +5,8 @@
 .DESCRIPTION
 依次做四件事：
   1) 按插件的运行时状态文件给桌宠发退出请求（收不到就只杀那一个 pid）；
-  2) hermes plugins disable dsh-pet-hermes；
-  3) hermes plugins remove  dsh-pet-hermes；
+  2) hermes plugins disable dsh-pet；
+  3) hermes plugins remove  dsh-pet；
   4) 数据目录默认保留，-Purge 才删。
 仓库里的源码（hermes/ 与 dsh-pet/）不会被碰。
 
@@ -26,7 +26,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$pluginId = 'dsh-pet-hermes'
+$pluginId = 'dsh-pet'
 
 $home_ = Join-Path $env:LOCALAPPDATA 'hermes'
 if ($HermesHome) { $home_ = $HermesHome }

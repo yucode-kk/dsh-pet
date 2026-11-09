@@ -8,6 +8,7 @@ import socket
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -47,7 +48,7 @@ def test_resolve_prefers_configured_setting(tmp_path, monkeypatch, fake_ctx, pac
 
 def test_resolve_uses_package_path_pointer(sidecar_env, tmp_path, monkeypatch, package_tree):
     monkeypatch.delenv("DSH_PET_HOME", raising=False)
-    plugin_root = tmp_path / "plugins" / "dsh-pet-hermes"
+    plugin_root = tmp_path / "plugins" / "dsh-pet"
     plugin_root.mkdir(parents=True)
     (plugin_root / "package-path.json").write_text(
         json.dumps({"packageRoot": str(package_tree)}), encoding="utf-8-sig"
@@ -113,7 +114,7 @@ def test_resolve_falls_back_to_vendored_when_nothing_exists(sidecar_env, tmp_pat
 
 def test_resolve_uses_vendored_runtime(sidecar_env, tmp_path, monkeypatch):
     monkeypatch.delenv("DSH_PET_HOME", raising=False)
-    plugin_root = tmp_path / "plugins" / "dsh-pet-hermes"
+    plugin_root = tmp_path / "plugins" / "dsh-pet"
     vendored = plugin_root / "dsh-pet"
     (vendored / "lib").mkdir(parents=True)
     (vendored / "lib" / "standalone.js").write_text("//", encoding="utf-8")
@@ -540,9 +541,11 @@ def test_start_reuses_running_instance(sidecar_env, monkeypatch):
 def test_start_errors_when_script_missing(sidecar_env, monkeypatch, tmp_path):
     monkeypatch.setattr(Sidecar, "current", lambda self: None)
     monkeypatch.setattr(Sidecar, "leftover_instances", lambda self: [])
+    sidecar_env.root = tmp_path / "plugins" / "dsh-pet"
     sidecar_env.script = tmp_path / "nope" / "standalone.js"
+    monkeypatch.setattr(Sidecar, "npm_path", lambda self: None)
 
-    with pytest.raises(SidecarError, match="找不到独立模式入口"):
+    with pytest.raises(SidecarError, match="没有找到 dsh-pet 运行时"):
         sidecar_env.start()
 
 
@@ -977,3 +980,138 @@ def test_stop_if_owned_swallows_errors(sidecar_env, monkeypatch):
     sidecar_env._cleanup_on_exit = True
 
     sidecar_env.stop_if_owned()  # 不抛
+
+
+# ── 市场安装：插件目录里没有自带运行时，首次启动按固定版本自举 ───────────────
+def _isolated(sidecar_env, tmp_path, monkeypatch):
+    """摘掉仓库同级目录/环境变量，只留下插件目录与自举目录。
+
+    conftest 的 package_tree 就放在 tmp_path/dsh-pet，直接拿 tmp_path 做父目录会被
+    “同级目录”候选命中；这里套一层 plugins/ 让候选全落空。
+    """
+    monkeypatch.delenv("DSH_PET_HOME", raising=False)
+    sidecar_env.root = tmp_path / "plugins" / "dsh-pet"
+    sidecar_env.runtime_dir = tmp_path / "plugin-data" / "runtime"
+    sidecar_env.package_dir = sidecar_env._resolve_package_dir()
+    sidecar_env.script = sidecar_env.package_dir / "lib" / "standalone.js"
+    return sidecar_env
+
+
+def test_npm_path_prefers_npm_then_cmd(sidecar_env, monkeypatch):
+    calls = []
+
+    def which(name):
+        calls.append(name)
+        return None
+
+    monkeypatch.setattr(S.shutil, "which", which)
+    assert sidecar_env.npm_path() is None
+    assert calls == ["npm", "npm.cmd"]
+
+    monkeypatch.setattr(S.shutil, "which", lambda name: "/usr/bin/npm.cmd" if name == "npm.cmd" else None)
+    assert sidecar_env.npm_path() == "/usr/bin/npm.cmd"
+
+
+def test_ensure_runtime_returns_existing_package(sidecar_env):
+    assert sidecar_env.ensure_runtime() == sidecar_env.package_dir
+
+
+def test_ensure_runtime_installs_pinned_version(sidecar_env, tmp_path, monkeypatch):
+    sc = _isolated(sidecar_env, tmp_path, monkeypatch)
+    captured = {}
+
+    def fake_run(argv, **kwargs):
+        captured["argv"] = argv
+        captured["kwargs"] = kwargs
+        pkg = sc.runtime_dir / "node_modules" / "dsh-pet"
+        (pkg / "lib").mkdir(parents=True)
+        (pkg / "lib" / "standalone.js").write_text("// stub\n", encoding="utf-8")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(S.subprocess, "run", fake_run)
+    monkeypatch.setattr(Sidecar, "npm_path", lambda self: "C:/node/npm.cmd")
+
+    path = sc.ensure_runtime()
+
+    assert path == sc.runtime_dir / "node_modules" / "dsh-pet"
+    assert sc.script.exists()  # 装完重新解析了 script
+    argv = captured["argv"]
+    assert argv[0] == "C:/node/npm.cmd"
+    assert argv[-1] == f"{S.RUNTIME_PACKAGE}@{S.RUNTIME_VERSION}"
+    assert "--prefix" in argv and str(sc.runtime_dir) in argv
+    assert captured["kwargs"]["timeout"] == S.RUNTIME_NPM_TIMEOUT
+
+
+def test_ensure_runtime_without_npm(sidecar_env, tmp_path, monkeypatch):
+    sc = _isolated(sidecar_env, tmp_path, monkeypatch)
+    monkeypatch.setattr(Sidecar, "npm_path", lambda self: None)
+
+    with pytest.raises(SidecarError, match="也找不到 npm"):
+        sc.ensure_runtime()
+
+
+def test_ensure_runtime_reports_npm_exit_code(sidecar_env, tmp_path, monkeypatch):
+    sc = _isolated(sidecar_env, tmp_path, monkeypatch)
+    monkeypatch.setattr(Sidecar, "npm_path", lambda self: "npm")
+    monkeypatch.setattr(
+        S.subprocess,
+        "run",
+        lambda argv, **kwargs: SimpleNamespace(returncode=1, stdout="", stderr="EACCES 权限不足"),
+    )
+
+    with pytest.raises(SidecarError, match="npm 退出码 1") as exc:
+        sc.ensure_runtime()
+    assert "EACCES" in str(exc.value)
+
+
+def test_ensure_runtime_falls_back_to_stdout_on_failure(sidecar_env, tmp_path, monkeypatch):
+    sc = _isolated(sidecar_env, tmp_path, monkeypatch)
+    monkeypatch.setattr(Sidecar, "npm_path", lambda self: "npm")
+    monkeypatch.setattr(
+        S.subprocess,
+        "run",
+        lambda argv, **kwargs: SimpleNamespace(returncode=2, stdout="registry 不可达", stderr=""),
+    )
+
+    with pytest.raises(SidecarError, match="npm 退出码 2") as exc:
+        sc.ensure_runtime()
+    assert "registry 不可达" in str(exc.value)
+
+
+def test_ensure_runtime_rejects_empty_install(sidecar_env, tmp_path, monkeypatch):
+    sc = _isolated(sidecar_env, tmp_path, monkeypatch)
+    monkeypatch.setattr(Sidecar, "npm_path", lambda self: "npm")
+    monkeypatch.setattr(
+        S.subprocess,
+        "run",
+        lambda argv, **kwargs: SimpleNamespace(returncode=0, stdout="", stderr=""),
+    )
+
+    with pytest.raises(SidecarError, match="npm 装完仍然找不到"):
+        sc.ensure_runtime()
+
+
+def test_ensure_runtime_wraps_oserror(sidecar_env, tmp_path, monkeypatch):
+    sc = _isolated(sidecar_env, tmp_path, monkeypatch)
+    monkeypatch.setattr(Sidecar, "npm_path", lambda self: "npm")
+
+    def boom(argv, **kwargs):
+        raise OSError("no such file")
+
+    monkeypatch.setattr(S.subprocess, "run", boom)
+
+    with pytest.raises(SidecarError, match="安装 dsh-pet 运行时失败：no such file"):
+        sc.ensure_runtime()
+
+
+def test_ensure_runtime_wraps_timeout(sidecar_env, tmp_path, monkeypatch):
+    sc = _isolated(sidecar_env, tmp_path, monkeypatch)
+    monkeypatch.setattr(Sidecar, "npm_path", lambda self: "npm")
+
+    def slow(argv, **kwargs):
+        raise S.subprocess.TimeoutExpired(cmd="npm", timeout=1)
+
+    monkeypatch.setattr(S.subprocess, "run", slow)
+
+    with pytest.raises(SidecarError, match="安装 dsh-pet 运行时失败"):
+        sc.ensure_runtime()

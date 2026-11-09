@@ -52,7 +52,7 @@ def test_is_gateway_run_reads_process_argv(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["hermes", "gateway", "run"])
     assert plugin._is_gateway_run() is True
 
-    monkeypatch.setattr(sys, "argv", ["hermes", "dsh-pet-hermes", "start"])
+    monkeypatch.setattr(sys, "argv", ["hermes", "dsh-pet", "start"])
     assert plugin._is_gateway_run() is False
 
 
@@ -97,7 +97,7 @@ def test_register_wires_hooks_and_unload(gateway_env, monkeypatch):
     assert len(ctx.unload_callbacks) == 1
     # 卸载回调可以安全调用（没拉起过进程就什么都不做）
     ctx.unload_callbacks[0]()
-    assert (gateway_env / "plugin-data" / "dsh-pet-hermes" / "runtime-home").parent.exists()
+    assert (gateway_env / "plugin-data" / "dsh-pet" / "runtime-home").parent.exists()
 
 
 def test_register_skips_autostart_when_not_gateway(gateway_env, monkeypatch):

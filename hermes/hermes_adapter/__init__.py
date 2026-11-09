@@ -66,7 +66,7 @@ def register(ctx: Any) -> None:
         threading.Thread(
             target=_autostart,
             args=(sidecar,),
-            name="dsh-pet-hermes-autostart",
+            name="dsh-pet-autostart",
             daemon=True,
         ).start()
 

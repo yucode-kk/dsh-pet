@@ -80,7 +80,7 @@ Node.js 侧继续使用当前 `dsh-pet` 包中的独立 CLI、host 逻辑、HTTP
 Hermes 插件使用：
 
 ```text
-<HERMES_PROFILE_PLUGIN_DATA>/dsh-pet-hermes/
+<HERMES_PROFILE_PLUGIN_DATA>/dsh-pet/
   runtime-home/
     dsh-pet/
       config.json

@@ -67,11 +67,11 @@ class Notifier:
         with self._lock:
             if self._thread is not None and self._thread.is_alive():
                 return
-            thread = threading.Thread(target=self._drain, name="dsh-pet-hermes-notifier", daemon=True)
+            thread = threading.Thread(target=self._drain, name="dsh-pet-notifier", daemon=True)
             self._thread = thread
             thread.start()
             if self._watchdog is None or not self._watchdog.is_alive():
-                dog = threading.Thread(target=self._idle_watch, name="dsh-pet-hermes-idle", daemon=True)
+                dog = threading.Thread(target=self._idle_watch, name="dsh-pet-idle", daemon=True)
                 self._watchdog = dog
                 dog.start()
 
