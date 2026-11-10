@@ -14,6 +14,12 @@
   <img alt="assets" src="https://img.shields.io/badge/assets-dynamic%20animations-ff69b4">
 </p>
 
+> **这是 [PC2005-cloud/dsh-pet](https://github.com/PC2005-cloud/dsh-pet) 的 fork。**
+> 桌宠本体、动画素材链、DSH 插件与下面这份 README 都出自父仓库 PC2005-cloud/dsh-pet（MIT，
+> 版权归原作者）。本 fork 只加了一层：`hermes/` 子目录把同一只桌宠接成 Hermes 原生插件，
+> 外加 Hermes 插件市场的那份条目。除 `hermes/` 之外的改动以父仓库为准；安装 DSH 插件请直接
+> 用上游仓库，本 fork 的安装说明只覆盖 Hermes 那一侧（见 [`hermes/README.md`](hermes/README.md)）。
+
 一只住在 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 里的桌面宠物：待机呼吸、随机动作（打瞌睡、玩魔方、吃火锅……）、左右转向、屏幕漫游、点击 Q 弹、拖拽甩抛反弹、右键菜单点播——一百余个透明动画随时无缝衔接；还能跟随 DSH 会话事件切换工作状态动画、按档位播放余额动画 + 头顶气泡、碎碎念与对话聊天、窗口失焦时弹系统通知。可多开同屏，能脱离浏览器住上**桌面**（透明置顶小窗），也能自己添加**全新宠物种类**（pet pack）。
 
 这不是一个普通插件，而是**完整的三件套项目**：

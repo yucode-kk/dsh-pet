@@ -1,9 +1,14 @@
 # dsh-pet for Hermes
 
 A Hermes plugin that runs [dsh-pet](https://github.com/PC2005-cloud/dsh-pet) — a small
-desktop pet — as a native Hermes companion. This repository is a fork of the upstream
-dsh-pet project; the Hermes adapter lives in this `hermes/` subdirectory, and that is
-what a catalog install copies.
+desktop pet — as a native Hermes companion.
+
+**Upstream:** this repository is a fork of
+[`PC2005-cloud/dsh-pet`](https://github.com/PC2005-cloud/dsh-pet) (the parent project — pet
+runtime, animations, asset pipeline and the DSH plugin all originate there, MIT licensed,
+copyright PC2005-cloud). This fork adds one thing: the `hermes/` subdirectory, which wraps
+the same pet as a Hermes plugin. Everything outside `hermes/` belongs to upstream; a catalog
+install copies only `hermes/`.
 
 ## What it does
 
@@ -37,11 +42,24 @@ Configuration (`plugins.entries.dsh-pet.settings`): `autostart` (default `true`)
 
 ## Runtime fetching (disclosure)
 
-- Catalog installs fetch a pinned runtime on first start:
-  `npm install --omit=dev --prefix <HERMES_HOME>/plugin-data/dsh-pet/runtime dsh-pet@0.4.7`
-  (~80 MB, one time). The version is hard-coded in `hermes_adapter/sidecar.py`
-  (`RUNTIME_VERSION`); it is not a self-updater — updates arrive through a catalog
-  SHA bump in the Hermes repo plus `hermes plugins update`.
+- Catalog installs fetch a pinned runtime on first start. It is **not**
+  `npm install dsh-pet@0.4.7`: the plugin ships a lockfile (`hermes/runtime-lock/`,
+  `lockfileVersion` 3) pinning `dsh-pet@0.4.7` plus all 98 transitive packages to exact
+  versions with `sha512` integrities resolved from `registry.npmjs.org`, and installs it with
+  `npm ci --omit=dev --ignore-scripts --no-audit --no-fund` into
+  `<HERMES_HOME>/plugin-data/dsh-pet/runtime` (~80 MB, one time). Upstream's own manifest uses
+  `^` ranges, so `npm install` would resolve a fresh dependency tree on every first start;
+  `npm ci` fails loudly if the lock and the manifest ever disagree. Both the version constant
+  (`RUNTIME_VERSION`) and the lockfile are hard-coded and are not a self-updater — updates
+  arrive through a catalog SHA bump in the Hermes repo plus `hermes plugins update`.
+- The Node/Electron child gets a **minimal environment**, never the inherited one: `PATH`,
+  `PATHEXT`, `COMSPEC`, `SYSTEMROOT`/`WINDIR`/`SYSTEMDRIVE`, `TEMP`/`TMP`/`TMPDIR`,
+  `USERPROFILE`/`HOMEDRIVE`/`HOMEPATH`/`HOME`, `APPDATA`/`LOCALAPPDATA`/`PROGRAMDATA`,
+  `PROGRAMFILES`/`PROGRAMFILES(X86)`, `NUMBER_OF_PROCESSORS`, `PROCESSOR_ARCHITECTURE`,
+  `LANG`/`LC_ALL`, plus `DSH_HOME` and the explicit `DSH_PET_ELECTRON_PATH` /
+  `DSH_PET_ELECTRON_MIRROR` opt-ins. Hermes provider keys (`OPENAI_API_KEY`, …) are never
+  passed to code fetched at install time. `npm ci` gets the same base plus `NPM_CONFIG_*`
+  (registry/proxy/cache are tool configuration, not credentials).
 - dsh-pet itself downloads Electron (~350 MB) into
   `<HERMES_HOME>/plugin-data/dsh-pet/runtime-home/electron` on first launch, unless a
   local `%USERPROFILE%\.dsh\electron` (or `DSH_PET_ELECTRON_PATH`) is found and reused.
