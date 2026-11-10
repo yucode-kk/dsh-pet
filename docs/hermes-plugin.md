@@ -77,14 +77,25 @@ Electron 不必预先下载：本机 `%USERPROFILE%\.dsh\electron` 有现成的�
 插件目录里没有自带运行时。这条路第一次启动会自己补：
 
 ```
-<HERMES_HOME>/plugin-data/dsh-pet/runtime/node_modules/dsh-pet/   # npm install --prefix 到这里
+<HERMES_HOME>/plugin-data/dsh-pet/runtime/node_modules/dsh-pet/   # npm ci（读插件自带的锁文件）到这里
 ```
 
-- 固定版本 `dsh-pet@0.4.7`（`hermes_adapter/sidecar.py` 里的 `RUNTIME_VERSION`），不是自更新：
-  升级要提 PR 把版本和条目 sha 一起 bump，reviewer 才看得见。
+- 装的是**锁文件**：`hermes/runtime-lock/package-lock.json`（lockfileVersion 3）把 `dsh-pet@0.4.7`
+  连同全部 98 个间接依赖钉到精确版本 + `sha512` integrity，源固定为 `registry.npmjs.org`，
+  用 `npm ci --omit=dev --ignore-scripts --no-audit --no-fund` 装。上游包自己的 `dependencies`
+  是 `^` 范围，用 `npm install <包>` 每次首启都会重新解析依赖树，只有顶层那个包是钉住的。
+- 固定版本 `dsh-pet@0.4.7`（`hermes_adapter/sidecar.py` 里的 `RUNTIME_VERSION`）＋锁文件，不是自更新：
+  升级要提 PR 把版本、锁文件与条目 sha 一起 bump，reviewer 才看得见。
 - 一次性下载约 80 MB，需要联网和 PATH 里的 `npm`；慢网络下可能几十秒到几分钟没反应，
-  日志里会有一行「运行时缺失，按固定版本装到 …」。
+  日志里会有一行「运行时缺失，按锁文件装 …」。
+- 子进程只拿到**最小环境**（`PATH`/`PATHEXT`/`COMSPEC`/`SYSTEMROOT`/`WINDIR`/`SYSTEMDRIVE`/
+  `TEMP`/`TMP`/`TMPDIR`/`USERPROFILE`/`HOMEDRIVE`/`HOMEPATH`/`HOME`/`APPDATA`/`LOCALAPPDATA`/
+  `PROGRAMDATA`/`PROGRAMFILES`/`PROGRAMFILES(X86)`/`NUMBER_OF_PROCESSORS`/`PROCESSOR_ARCHITECTURE`/
+  `LANG`/`LC_ALL`，加上 `DSH_HOME` 与显式 opt-in 的 `DSH_PET_ELECTRON_PATH`/`DSH_PET_ELECTRON_MIRROR`），
+  不继承 Hermes 的环境——宿主里那些 provider key 不会流到安装时才取回来的代码里。
+  `npm ci` 那份额外透传 `NPM_CONFIG_*`（registry/proxy/cache 是工具配置，不是凭据）。
 - 找不到 `npm` 时不会静默失败，`start` 会报「没有找到 dsh-pet 运行时，也找不到 npm」；
+  插件目录缺锁文件时报「缺运行时锁文件」，提示重装而不是退回 `npm install`。
   想把插件目录变成自包含的，就用仓库根那份安装脚本（上一条）。
 - 市场装出来的运行时是上游 npm 包（`dsh-pet@0.4.7`），桌面版「吃白饭」等本仓库的新特性
   以那份包的版本为准；要跟着仓库走就用自包含安装。
@@ -117,7 +128,7 @@ hermes dsh-pet uninstall -y [--purge]   # 停进程 + 禁用 + 移除插件
   runtime-home/
     dsh-pet/            # main-config.jsonc、pet/*.json、logs.txt、standalone-runtime.json
     electron/           # Electron 运行时（首次启动下载，约 350 MB）
-  runtime/              # 仅市场安装路径会用到：npm install --prefix 出来的固定版本运行时
+  runtime/              # 仅市场安装路径会用到：npm ci（读 runtime-lock 锁文件）出来的运行时
 ```
 
 和 DSH 的 `~/.dsh` 分开：配置、AI 密钥、对话记忆、待办、日志各走各的，也没有软链接互相指向。

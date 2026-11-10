@@ -1,0 +1,9 @@
+{
+  "name": "dsh-pet-hermes-runtime",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Lockfile for the dsh-pet runtime the dsh-pet Hermes plugin installs on first start. Not published; used with npm ci.",
+  "dependencies": {
+    "dsh-pet": "0.4.7"
+  }
+}

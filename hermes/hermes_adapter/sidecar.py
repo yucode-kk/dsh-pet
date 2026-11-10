@@ -44,6 +44,67 @@ RUNTIME_PACKAGE = "dsh-pet"
 RUNTIME_VERSION = "0.4.7"
 #: npm install 的等待上限：80 MB 左右，慢网络下也够用。
 RUNTIME_NPM_TIMEOUT = 600.0
+#: 随插件发布的运行时锁文件（``hermes/runtime-lock/``）：dsh-pet@<固定版本> 及全部间接依赖的
+#: 精确版本 + tarball integrity。装运行时用 ``npm ci`` 读这份锁，而不是 ``npm install <包>``——
+#: 后者会照 dsh-pet 自己声明的 ``^`` 范围在每次首启重新解析依赖树，pin 住的只有顶层那一个包。
+RUNTIME_LOCK_DIR = Path(__file__).resolve().parent.parent / "runtime-lock"
+
+#: 传给 node / Electron / npm 的环境白名单：子进程只需要“能跑起来”的路径、临时目录和用户目录。
+#: Hermes 进程自己的整套环境一律不继承——那份环境里有各家 provider 的 key，而运行时是 npm 现取的代码。
+_ENV_KEYS = frozenset(
+    {
+        "PATH",
+        "PATHEXT",
+        "COMSPEC",
+        "SYSTEMROOT",
+        "WINDIR",
+        "SYSTEMDRIVE",
+        "TEMP",
+        "TMP",
+        "TMPDIR",
+        "USERPROFILE",
+        "HOMEDRIVE",
+        "HOMEPATH",
+        "HOME",
+        "APPDATA",
+        "LOCALAPPDATA",
+        "PROGRAMDATA",
+        "PROGRAMFILES",
+        "PROGRAMFILES(X86)",
+        "NUMBER_OF_PROCESSORS",
+        "PROCESSOR_ARCHITECTURE",
+        "LANG",
+        "LC_ALL",
+    }
+)
+#: 显式 opt-in 的运行时定位开关（用户/宿主自己设的），不是凭据，按需透传。
+_ENV_RUNTIME_KEYS = frozenset({"DSH_PET_ELECTRON_PATH", "DSH_PET_ELECTRON_MIRROR"})
+#: npm 的 proxy / registry / cache 配置是工具配置，不是凭据，装运行时的时候照原样透传。
+_ENV_NPM_PREFIX = "NPM_CONFIG_"
+
+
+def _child_env(extra: Optional[dict[str, str]] = None, *, npm: bool = False) -> dict[str, str]:
+    """构造给 node / Electron / npm 的最小环境。
+
+    只带白名单里的变量（路径、临时目录、用户目录）加 ``extra`` 显式给出的那几项；
+    调用方永远不该把 ``os.environ`` 整份塞给子进程。变量名按原样复制——Windows 上环境变量
+    大小写不敏感，改写大小写反而可能弄坏 ``PATH`` 这类键。
+    """
+    env: dict[str, str] = {}
+    for key, value in os.environ.items():
+        upper = key.upper()
+        if upper in _ENV_KEYS or upper in _ENV_RUNTIME_KEYS or (npm and upper.startswith(_ENV_NPM_PREFIX)):
+            env[key] = value
+    if extra:
+        for key, value in extra.items():
+            # 显式给的键先清掉继承来的同名项（Windows 上键名大小写不敏感），
+            # 空值等于“这一项不要”，而不是“留一份从宿主继承来的旧值”。
+            upper = key.upper()
+            for inherited in [existing for existing in env if existing.upper() == upper]:
+                env.pop(inherited, None)
+            if value:
+                env[key] = value
+    return env
 
 
 class SidecarError(RuntimeError):
@@ -248,9 +309,10 @@ class Sidecar:
     def ensure_runtime(self) -> Path:
         """确保有可用的 dsh-pet 包根；市场安装没有自带运行时，首次启动补一份固定版本。
 
-        安装走 ``npm install --prefix <插件数据>/runtime dsh-pet@<固定版本>``：只做一次，
-        失败就把 npm 的原话抛给用户，不吞成“找不到入口”。这不是自更新——版本由仓库里的
-        常量写死，升级要提 PR 改版本（catalog 的信任模型是固定 SHA + 固定版本）。
+        安装走 ``npm ci`` + 仓库自带的 ``runtime-lock/package-lock.json``：dsh-pet@<固定版本>
+        连同它全部间接依赖的精确版本、tarball integrity 都钉死在锁文件里，每次首启装出来的是
+        同一棵依赖树。失败就把 npm 的原话抛给用户，不吞成“找不到入口”。这不是自更新——版本
+        与锁文件由仓库写死，升级要提 PR（catalog 的信任模型是固定 SHA + 固定版本）。
         """
         if self.script.exists():
             return self.package_dir
@@ -260,27 +322,36 @@ class Sidecar:
                 "没有找到 dsh-pet 运行时，也找不到 npm；先跑一次 scripts/hermes-plugin-install.ps1"
                 "（自带运行时），或把 npm 放进 PATH 后重试。"
             )
+        manifest = RUNTIME_LOCK_DIR / "package.json"
+        lockfile = RUNTIME_LOCK_DIR / "package-lock.json"
+        if not (manifest.is_file() and lockfile.is_file()):
+            raise SidecarError(
+                f"插件目录里缺运行时锁文件（{lockfile} 不存在），插件不完整或版本太旧；"
+                "用 `hermes plugins install dsh-pet --force` 重装一次再来。"
+            )
         self.runtime_dir.mkdir(parents=True, exist_ok=True)
+        # 锁文件复制进运行时目录：npm ci 只认 cwd 里的 package.json + package-lock.json。
+        shutil.copy2(manifest, self.runtime_dir / manifest.name)
+        shutil.copy2(lockfile, self.runtime_dir / lockfile.name)
         _log.info(
-            "dsh-pet 运行时缺失，按固定版本 %s@%s 装到 %s（首次启动需要联网，约 80 MB）",
+            "dsh-pet 运行时缺失，按锁文件装 %s@%s 到 %s（首次启动需要联网，约 80 MB）",
             RUNTIME_PACKAGE,
             RUNTIME_VERSION,
             self.runtime_dir,
         )
         cmd = [
             npm,
-            "install",
+            "ci",
             "--omit=dev",
             "--ignore-scripts",
             "--no-audit",
             "--no-fund",
-            "--prefix",
-            str(self.runtime_dir),
-            f"{RUNTIME_PACKAGE}@{RUNTIME_VERSION}",
         ]
         try:
             done = subprocess.run(  # noqa: S603 - 固定 argv，无 shell
                 cmd,
+                cwd=str(self.runtime_dir),
+                env=_child_env(npm=True),
                 capture_output=True,
                 text=True,
                 timeout=RUNTIME_NPM_TIMEOUT,
@@ -430,11 +501,11 @@ class Sidecar:
             self.state_dir.mkdir(parents=True, exist_ok=True)
             # 借本机 DSH 已下好的 Electron（若存在），避免每次重装都把 350MB 重新拉一遍。
             shared_electron = _shared_electron_hint()
-            env = os.environ.copy()
-            env["DSH_HOME"] = str(self.home)
+            # 最小环境：只有路径/临时目录/用户目录，加 DSH_HOME（和显式给的 Electron 定位）。
+            # 不整份继承 Hermes 的环境——桌宠跑的是 npm 取回来的代码，不该看到宿主的 provider key。
+            env = _child_env({"DSH_HOME": str(self.home)})
             if shared_electron is not None and not env.get("DSH_PET_ELECTRON_PATH"):
                 env["DSH_PET_ELECTRON_PATH"] = str(shared_electron)
-            # Hermes 进程自身的环境一律不动，只改传给子进程的这一份副本。
 
             creationflags = 0
             if sys.platform == "win32":

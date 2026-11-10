@@ -1023,6 +1023,9 @@ def test_ensure_runtime_installs_pinned_version(sidecar_env, tmp_path, monkeypat
     def fake_run(argv, **kwargs):
         captured["argv"] = argv
         captured["kwargs"] = kwargs
+        # npm ci 只认 cwd 里的 package.json + package-lock.json，两份都得先铺好。
+        captured["manifest"] = (sc.runtime_dir / "package.json").is_file()
+        captured["lockfile"] = (sc.runtime_dir / "package-lock.json").is_file()
         pkg = sc.runtime_dir / "node_modules" / "dsh-pet"
         (pkg / "lib").mkdir(parents=True)
         (pkg / "lib" / "standalone.js").write_text("// stub\n", encoding="utf-8")
@@ -1035,11 +1038,45 @@ def test_ensure_runtime_installs_pinned_version(sidecar_env, tmp_path, monkeypat
 
     assert path == sc.runtime_dir / "node_modules" / "dsh-pet"
     assert sc.script.exists()  # 装完重新解析了 script
+    assert captured["manifest"] and captured["lockfile"]
     argv = captured["argv"]
     assert argv[0] == "C:/node/npm.cmd"
-    assert argv[-1] == f"{S.RUNTIME_PACKAGE}@{S.RUNTIME_VERSION}"
-    assert "--prefix" in argv and str(sc.runtime_dir) in argv
-    assert captured["kwargs"]["timeout"] == S.RUNTIME_NPM_TIMEOUT
+    # 装的是锁文件（npm ci），而不是按 ^ 范围现解析（npm install <包>）。
+    assert argv[1] == "ci"
+    assert "--prefix" not in argv
+    assert not any(arg.startswith(f"{S.RUNTIME_PACKAGE}@") for arg in argv)
+    kwargs = captured["kwargs"]
+    assert kwargs["cwd"] == str(sc.runtime_dir)
+    assert kwargs["timeout"] == S.RUNTIME_NPM_TIMEOUT
+    # 子进程环境是白名单，不是整份继承。
+    assert "env" in kwargs and kwargs["env"].get("PATH") == os.environ.get("PATH")
+
+
+def test_ensure_runtime_requires_lockfile(sidecar_env, tmp_path, monkeypatch):
+    sc = _isolated(sidecar_env, tmp_path, monkeypatch)
+    monkeypatch.setattr(Sidecar, "npm_path", lambda self: "npm")
+    monkeypatch.setattr(S, "RUNTIME_LOCK_DIR", tmp_path / "missing-lock")
+    ran = []
+    monkeypatch.setattr(S.subprocess, "run", lambda argv, **kwargs: ran.append(argv))
+
+    with pytest.raises(SidecarError, match="缺运行时锁文件"):
+        sc.ensure_runtime()
+    assert ran == []  # 没有锁文件就不该去跑 npm
+
+
+def test_lockfile_pins_every_dependency_exactly():
+    """锁文件必须全树精确版本 + integrity：维护者要求的正是“依赖树不再每次首启重新解析”。"""
+    lock = json.loads((S.RUNTIME_LOCK_DIR / "package-lock.json").read_text("utf-8"))
+    assert lock["lockfileVersion"] >= 3
+    root = lock["packages"][""]
+    assert root["dependencies"][S.RUNTIME_PACKAGE] == S.RUNTIME_VERSION
+    installed = {k: v for k, v in lock["packages"].items() if k}
+    assert installed, "锁文件里没有装出来的包"
+    for name, info in installed.items():
+        assert info.get("version"), f"{name} 缺版本"
+        assert not any(c in info["version"] for c in "^~<>=*|"), f"{name} 不是精确版本：{info['version']}"
+        assert info.get("integrity", "").startswith("sha512-"), f"{name} 缺 integrity"
+        assert info.get("resolved", "").startswith("https://registry.npmjs.org/"), f"{name} 指向第三方源"
 
 
 def test_ensure_runtime_without_npm(sidecar_env, tmp_path, monkeypatch):
@@ -1115,3 +1152,75 @@ def test_ensure_runtime_wraps_timeout(sidecar_env, tmp_path, monkeypatch):
 
     with pytest.raises(SidecarError, match="安装 dsh-pet 运行时失败"):
         sc.ensure_runtime()
+
+
+# ── 子进程环境白名单 ────────────────────────────────────────────────────
+
+
+def test_child_env_drops_host_secrets(monkeypatch):
+    """宿主环境里的各家 key 一个都不能传给 node/Electron。"""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-secret")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-secret")
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_secret")
+    monkeypatch.setenv("HERMES_TELEGRAM_TOKEN", "bot-secret")
+    monkeypatch.setenv("DSH_PET_ELECTRON_MIRROR", "https://mirror.example/electron")
+
+    env = S._child_env()
+
+    assert "OPENAI_API_KEY" not in env
+    assert "ANTHROPIC_API_KEY" not in env
+    assert "GITHUB_TOKEN" not in env
+    assert "HERMES_TELEGRAM_TOKEN" not in env
+    # 路径这类“能跑起来”的变量要留下，否则 node 都起不来。
+    assert env.get("PATH") == os.environ.get("PATH")
+    # 显式 opt-in 的运行时定位开关照传。
+    assert env["DSH_PET_ELECTRON_MIRROR"] == "https://mirror.example/electron"
+
+
+def test_child_env_passes_npm_config_only_when_asked(monkeypatch):
+    monkeypatch.setenv("npm_config_registry", "https://registry.npmmirror.com")
+    monkeypatch.setenv("NPM_CONFIG_PROXY", "http://127.0.0.1:7897")
+
+    def env_get(env: dict[str, str], name: str) -> str | None:
+        return next((value for key, value in env.items() if key.upper() == name.upper()), None)
+
+    node_env = S._child_env()
+    assert not any(key.upper().startswith("NPM_CONFIG_") for key in node_env)
+
+    npm_env = S._child_env(npm=True)
+    assert env_get(npm_env, "npm_config_registry") == "https://registry.npmmirror.com"
+    assert env_get(npm_env, "NPM_CONFIG_PROXY") == "http://127.0.0.1:7897"
+
+
+def test_child_env_extra_overrides_and_skips_empty(monkeypatch):
+    monkeypatch.setenv("DSH_HOME", "C:/inherited")
+    env = S._child_env({"DSH_HOME": "D:/own", "DSH_PET_ELECTRON_PATH": ""})
+
+    assert env["DSH_HOME"] == "D:/own"  # 显式给的赢过继承的
+    assert "DSH_PET_ELECTRON_PATH" not in env  # 空值不落进环境
+
+
+def test_start_child_env_excludes_host_secrets(sidecar_env, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-secret")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "aws-secret")
+
+    proc = FakePopen(pid=4242)
+    captured = {}
+
+    def fake_popen(argv, **kwargs):
+        captured.update(kwargs)
+        return proc
+
+    monkeypatch.setattr(S.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(Sidecar, "current", lambda self: None)
+    monkeypatch.setattr(Sidecar, "leftover_instances", lambda self: [])
+    monkeypatch.setattr(Sidecar, "read_runtime", lambda self: make_runtime(pid=4242))
+    monkeypatch.setattr(Sidecar, "health", lambda self, port: {"pid": 4242})
+
+    sidecar_env.start()
+
+    env = captured["env"]
+    assert "OPENAI_API_KEY" not in env
+    assert "AWS_SECRET_ACCESS_KEY" not in env
+    assert env["DSH_HOME"] == str(sidecar_env.home)
+    assert env.get("PATH") == os.environ.get("PATH")
